@@ -30,3 +30,4 @@ jobs:
         docker push ghcr.io/${{ github.repository }}/yolo-edge:latest
         docker push ghcr.io/${{ github.repository }}/dashboard:latest
 # trigger workflow
+# re-run workflow
