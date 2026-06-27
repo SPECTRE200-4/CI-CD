@@ -1,5 +1,3 @@
-version: "3.8"
-
 services:
   yolo-edge:
     build: ./yolo-edge
@@ -31,7 +29,7 @@ services:
       - zookeeper
 
   zookeeper:
-    image: bitnami/zookeeper:3.9
+    image: zookeeper:3.9
     ports:
       - "2181:2181"
 
