@@ -31,3 +31,4 @@ jobs:
         docker push ghcr.io/${{ github.repository }}/dashboard:latest
 # trigger workflow
 # re-run workflow
+# trigger workflow
