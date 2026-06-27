@@ -1,0 +1,31 @@
+name: Build and Push Edge Images
+
+on:
+  push:
+    branches: [ "main" ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v3
+
+    - name: Log in to GitHub Container Registry
+      uses: docker/login-action@v2
+      with:
+        registry: ghcr.io
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Build YOLO-edge image
+      run: docker build -t ghcr.io/${{ github.repository }}/yolo-edge:latest ./yolo-edge
+
+    - name: Build Dashboard image
+      run: docker build -t ghcr.io/${{ github.repository }}/dashboard:latest ./dashboard
+
+    - name: Push images
+      run: |
+        docker push ghcr.io/${{ github.repository }}/yolo-edge:latest
+        docker push ghcr.io/${{ github.repository }}/dashboard:latest
