@@ -1,3 +1,5 @@
+version: "3.8"
+
 services:
   yolo-edge:
     build: ./yolo-edge
@@ -7,6 +9,8 @@ services:
       - kafka
     environment:
       - KAFKA_BROKER=kafka:9092
+    networks:
+      - edge-net
 
   dashboard:
     build: ./dashboard
@@ -17,24 +21,30 @@ services:
       - kafka
     environment:
       - KAFKA_BROKER=kafka:9092
+    networks:
+      - edge-net
 
   kafka:
     image: apache/kafka:3.7.0
     ports:
       - "9092:9092"
-    environment:     
+    environment:
       - KAFKA_CFG_ZOOKEEPER_CONNECT=zookeeper:2181
       - KAFKA_CFG_LISTENERS=PLAINTEXT://:9092
       - KAFKA_CFG_ADVERTISED_LISTENERS=PLAINTEXT://kafka:9092
       - ALLOW_PLAINTEXT_LISTENER=yes
     depends_on:
       - zookeeper
+    networks:
+      - edge-net
 
   zookeeper:
     image: zookeeper:3.9
     ports:
       - "2181:2181"
+    networks:
+      - edge-net
 
 networks:
-  default:
-    name: edge-net
+  edge-net:
+    driver: bridge
