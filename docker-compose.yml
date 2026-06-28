@@ -1,21 +1,25 @@
 
 services:
+
   kafka:
     image: apache/kafka:3.7.0
-    container_name: ci-cd-kafka-1
+    container_name: kafka-broker
     ports:
       - "9092:9092"
     environment:
-      # Reduce heap size to control memory footprint
-      - KAFKA_HEAP_OPTS=-Xmx512M -Xms256M
-      # Advertise the broker correctly inside the Docker network
-      - KAFKA_CFG_ADVERTISED_LISTENERS=PLAINTEXT://kafka:9092
-      - KAFKA_CFG_LISTENERS=PLAINTEXT://:9092
-      - KAFKA_CFG_AUTO_CREATE_TOPICS_ENABLE=true
-      # Space complexity tweaks: limit log retention
-      - KAFKA_CFG_LOG_RETENTION_HOURS=12
-      - KAFKA_CFG_LOG_SEGMENT_BYTES=104857600   # 100 MB segments
-      - KAFKA_CFG_LOG_RETENTION_BYTES=1073741824 # 1 GB max per topic
+      KAFKA_HEAP_OPTS: "-Xmx512M -Xms256M"
+
+      # Kafka internal networking
+      KAFKA_CFG_LISTENERS: "PLAINTEXT://0.0.0.0:9092"
+      KAFKA_CFG_ADVERTISED_LISTENERS: "PLAINTEXT://kafka:9092"
+
+      KAFKA_CFG_AUTO_CREATE_TOPICS_ENABLE: "true"
+
+      # Retention tuning
+      KAFKA_CFG_LOG_RETENTION_HOURS: 12
+      KAFKA_CFG_LOG_SEGMENT_BYTES: 104857600
+      KAFKA_CFG_LOG_RETENTION_BYTES: 1073741824
+
     volumes:
       - kafka-data:/var/lib/kafka/data
     networks:
@@ -26,33 +30,42 @@ services:
       timeout: 5s
       retries: 5
 
+
   dashboard:
     build: ./dashboard
     image: ghcr.io/spectre200-4/ci-cd/dashboard:latest
-    container_name: ci-cd-dashboard-1
+    container_name: dashboard-ui
     depends_on:
       kafka:
         condition: service_healthy
     ports:
       - "8000:8000"
+    environment:
+      - KAFKA_BROKER=kafka:9092
+      - KAFKA_TOPIC=detections
     networks:
       - edge-net
+
 
   yolo-edge:
     build: ./yolo-edge
     image: ghcr.io/spectre200-4/ci-cd/yolo-edge:latest
-    container_name: ci-cd-yolo-edge-1
+    container_name: yolo-edge
     depends_on:
       kafka:
         condition: service_healthy
     environment:
       - KAFKA_BROKER=kafka:9092
-      - CAMERA_STREAM_URL=http://192.168.0.112:8080/video
+      - KAFKA_TOPIC=detections
+      - CAMERA_STREAM_URL=http://192.168.0.104:8080/video
     networks:
       - edge-net
 
+
 networks:
   edge-net:
+    driver: bridge
+
 
 volumes:
   kafka-data:
