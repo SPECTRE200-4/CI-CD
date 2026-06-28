@@ -10,20 +10,22 @@ services:
       - "9092:9092"
 
     environment:
-      KAFKA_HEAP_OPTS: "-Xmx512M -Xms256M"
+      # ---------------- KRaft mode (REQUIRED for Kafka 3.7) ----------------
+      KAFKA_CFG_NODE_ID: "1"
+      KAFKA_CFG_PROCESS_ROLES: "broker,controller"
+      KAFKA_CFG_CONTROLLER_QUORUM_VOTERS: "1@kafka:9093"
+      KAFKA_CFG_CONTROLLER_LISTENER_NAMES: "CONTROLLER"
 
-      # Core listener configuration (CRITICAL FIX)
-      KAFKA_CFG_LISTENERS: "PLAINTEXT://0.0.0.0:9092"
+      # ---------------- Listeners ----------------
+      KAFKA_CFG_LISTENERS: "PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093"
       KAFKA_CFG_ADVERTISED_LISTENERS: "PLAINTEXT://kafka:9092"
-
-      # Required for correct broker behavior in Docker
-      KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP: "PLAINTEXT:PLAINTEXT"
+      KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP: "PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT"
       KAFKA_CFG_INTER_BROKER_LISTENER_NAME: "PLAINTEXT"
 
-      # Dev-friendly settings
+      # ---------------- Dev settings ----------------
       KAFKA_CFG_AUTO_CREATE_TOPICS_ENABLE: "true"
 
-      # Retention tuning (safe defaults)
+      # ---------------- Retention ----------------
       KAFKA_CFG_LOG_RETENTION_HOURS: 12
       KAFKA_CFG_LOG_SEGMENT_BYTES: 104857600
       KAFKA_CFG_LOG_RETENTION_BYTES: 1073741824
@@ -34,7 +36,6 @@ services:
     networks:
       - edge-net
 
-    # IMPORTANT: real readiness check (not just port check)
     healthcheck:
       test: ["CMD", "bash", "-c", "nc -z localhost 9092"]
       interval: 10s
@@ -45,7 +46,6 @@ services:
 
   dashboard:
     build: ./dashboard
-    image: ghcr.io/spectre200-4/ci-cd/dashboard:latest
     container_name: dashboard-ui
 
     depends_on:
@@ -56,8 +56,8 @@ services:
       - "8000:8000"
 
     environment:
-      - KAFKA_BROKER=kafka:9092
-      - KAFKA_TOPIC=detections
+      KAFKA_BROKER: kafka:9092
+      KAFKA_TOPIC: detections
 
     networks:
       - edge-net
@@ -65,7 +65,6 @@ services:
 
   yolo-edge:
     build: ./yolo-edge
-    image: ghcr.io/spectre200-4/ci-cd/yolo-edge:latest
     container_name: yolo-edge
 
     depends_on:
@@ -73,9 +72,9 @@ services:
         condition: service_healthy
 
     environment:
-      - KAFKA_BROKER=kafka:9092
-      - KAFKA_TOPIC=detections
-      - CAMERA_STREAM_URL=http://192.168.0.104:8080/video
+      KAFKA_BROKER: kafka:9092
+      KAFKA_TOPIC: detections
+      CAMERA_STREAM_URL: http://192.168.0.104:8080/video
 
     networks:
       - edge-net
