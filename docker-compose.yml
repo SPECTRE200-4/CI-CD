@@ -1,89 +1,51 @@
-version: "3.8"
+kafka:
+  image: apache/kafka:3.7.0
+  container_name: kafka-broker
 
-services:
+  ports:
+    - "9092:9092"
 
-  kafka:
-    image: apache/kafka:3.7.0
-    container_name: kafka-broker
+  environment:
+    # ---------------- CORE KRAFT ----------------
+    KAFKA_NODE_ID: 1
+    KAFKA_PROCESS_ROLES: broker,controller
 
-    ports:
-      - "9092:9092"
+    KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+    KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
 
-    environment:
-      # ---------------- KRaft mode (REQUIRED for Kafka 3.7) ----------------
-      KAFKA_CFG_NODE_ID: "1"
-      KAFKA_CFG_PROCESS_ROLES: "broker,controller"
-      KAFKA_CFG_CONTROLLER_QUORUM_VOTERS: "1@kafka:9093"
-      KAFKA_CFG_CONTROLLER_LISTENER_NAMES: "CONTROLLER"
+    # ---------------- LISTENERS ----------------
+    KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093
+    KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
 
-      # ---------------- Listeners ----------------
-      KAFKA_CFG_LISTENERS: "PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093"
-      KAFKA_CFG_ADVERTISED_LISTENERS: "PLAINTEXT://kafka:9092"
-      KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP: "PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT"
-      KAFKA_CFG_INTER_BROKER_LISTENER_NAME: "PLAINTEXT"
+    KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT
+    KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
 
-      # ---------------- Dev settings ----------------
-      KAFKA_CFG_AUTO_CREATE_TOPICS_ENABLE: "true"
+    # ---------------- STORAGE ----------------
+    KAFKA_LOG_DIRS: /var/lib/kafka/data
 
-      # ---------------- Retention ----------------
-      KAFKA_CFG_LOG_RETENTION_HOURS: 12
-      KAFKA_CFG_LOG_SEGMENT_BYTES: 104857600
-      KAFKA_CFG_LOG_RETENTION_BYTES: 1073741824
+    # IMPORTANT: must match format step once
+    KAFKA_CLUSTER_ID: 5L6g3nShT-eMCtK--X86sw
 
-    volumes:
-      - kafka-data:/var/lib/kafka/data
+  volumes:
+    - kafka-data:/var/lib/kafka/data
 
-    networks:
-      - edge-net
+  networks:
+    - edge-net
 
-    healthcheck:
-      test: ["CMD", "bash", "-c", "nc -z localhost 9092"]
-      interval: 10s
-      timeout: 5s
-      retries: 10
-      start_period: 20s
+  command: >
+    bash -c "
+    if [ ! -f /var/lib/kafka/data/meta.properties ]; then
+      echo 'Formatting Kafka storage...';
+      /opt/kafka/bin/kafka-storage.sh format
+      -t 5L6g3nShT-eMCtK--X86sw
+      -c /opt/kafka/config/kraft/server.properties;
+    fi &&
+    /opt/kafka/bin/kafka-server-start.sh /opt/kafka/config/kraft/server.properties
+    "
 
-
-  dashboard:
-    build: ./dashboard
-    container_name: dashboard-ui
-
-    depends_on:
-      kafka:
-        condition: service_healthy
-
-    ports:
-      - "8000:8000"
-
-    environment:
-      KAFKA_BROKER: kafka:9092
-      KAFKA_TOPIC: detections
-
-    networks:
-      - edge-net
-
-
-  yolo-edge:
-    build: ./yolo-edge
-    container_name: yolo-edge
-
-    depends_on:
-      kafka:
-        condition: service_healthy
-
-    environment:
-      KAFKA_BROKER: kafka:9092
-      KAFKA_TOPIC: detections
-      CAMERA_STREAM_URL: http://192.168.0.104:8080/video
-
-    networks:
-      - edge-net
-
-
-networks:
-  edge-net:
-    driver: bridge
-
-
-volumes:
-  kafka-data:
+  healthcheck:
+    test: ["CMD", "bash", "-c", "nc -z localhost 9092"]
+    interval: 10s
+    timeout: 5s
+    retries: 10
+    start_period: 20s
