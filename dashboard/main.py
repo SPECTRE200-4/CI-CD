@@ -7,11 +7,13 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse
 from kafka import KafkaConsumer
 
+# Environment variables
 KAFKA_BROKER = os.environ.get("KAFKA_BROKER", "kafka:9092")
 TOPIC = os.environ.get("KAFKA_TOPIC", "detections")
 
 app = FastAPI()
 
+# Track connected clients
 clients = set()
 latest_event = {"detection_count": 0, "detections": [], "device_id": None}
 
@@ -31,6 +33,7 @@ def kafka_worker(loop):
     for msg in consumer:
         latest_event = msg.value
 
+        # Broadcast to all connected WebSocket clients
         for ws in list(clients):
             asyncio.run_coroutine_threadsafe(
                 ws.send_json(latest_event),
@@ -52,10 +55,12 @@ async def ws_endpoint(websocket: WebSocket):
     clients.add(websocket)
 
     try:
+        # Send the latest snapshot immediately
         await websocket.send_json(latest_event)
 
+        # Keep connection alive without blocking
         while True:
-            await websocket.receive_text()
+            await asyncio.sleep(10)
 
     except WebSocketDisconnect:
         clients.remove(websocket)
