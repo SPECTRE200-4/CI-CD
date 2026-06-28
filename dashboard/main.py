@@ -1,7 +1,6 @@
 import os
 import json
 import asyncio
-
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse
 from kafka import KafkaConsumer
@@ -19,44 +18,54 @@ latest_event = {
     "device_id": None
 }
 
+
 # ---------------- KAFKA CONSUMER ----------------
-def kafka_consumer_task(loop):
+async def kafka_loop():
+    """
+    Runs Kafka consumer in a safe async loop using a thread executor internally.
+    This avoids thread-to-async websocket race conditions.
+    """
+
     global latest_event
+
+    loop = asyncio.get_running_loop()
 
     consumer = KafkaConsumer(
         TOPIC,
         bootstrap_servers=KAFKA_BROKER,
         value_deserializer=lambda v: json.loads(v.decode("utf-8")),
-        auto_offset_reset="earliest",   # important for debugging
+        auto_offset_reset="latest",
         enable_auto_commit=True,
-        group_id="dashboard-group"
+        group_id="dashboard-consumer"
     )
 
-    for msg in consumer:
-        latest_event = msg.value
+    def consume():
+        nonlocal consumer
+        for msg in consumer:
+            loop.call_soon_threadsafe(handle_message, msg.value)
 
-        # snapshot clients safely
-        current_clients = list(clients)
+    def handle_message(value):
+        global latest_event
+        latest_event = value
 
-        for ws in current_clients:
-            asyncio.run_coroutine_threadsafe(
-                ws.send_json(latest_event),
-                loop
-            )
+        dead_clients = set()
+
+        for ws in clients:
+            try:
+                asyncio.create_task(ws.send_json(latest_event))
+            except Exception:
+                dead_clients.add(ws)
+
+        for d in dead_clients:
+            clients.discard(d)
+
+    await asyncio.to_thread(consume)
 
 
 # ---------------- STARTUP ----------------
 @app.on_event("startup")
 async def startup():
-    loop = asyncio.get_running_loop()
-
-    import threading
-    t = threading.Thread(
-        target=kafka_consumer_task,
-        args=(loop,),
-        daemon=True
-    )
-    t.start()
+    asyncio.create_task(kafka_loop())
 
 
 # ---------------- WEBSOCKET ----------------
@@ -66,11 +75,11 @@ async def websocket_endpoint(websocket: WebSocket):
     clients.add(websocket)
 
     try:
-        # immediate sync snapshot
+        # immediate state sync
         await websocket.send_json(latest_event)
 
         while True:
-            await asyncio.sleep(30)
+            await asyncio.sleep(60)
 
     except WebSocketDisconnect:
         clients.discard(websocket)
@@ -109,8 +118,6 @@ def dashboard():
             ws.onmessage = (event) => {
                 const data = JSON.parse(event.data);
 
-                console.log("Incoming:", data);
-
                 document.getElementById("count").innerText = data.detection_count || 0;
                 document.getElementById("device").innerText = data.device_id || "-";
 
@@ -120,8 +127,10 @@ def dashboard():
                 (data.detections || []).forEach(d => {
                     const li = document.createElement("li");
 
-                    const label = d.label || d.class || "unknown";
-                    const conf = d.confidence ? (d.confidence * 100).toFixed(1) : "0";
+                    const label = d.label || "unknown";
+                    const conf = d.confidence
+                        ? (d.confidence * 100).toFixed(1)
+                        : "0";
 
                     li.textContent = `${label} (${conf}%)`;
                     list.appendChild(li);
