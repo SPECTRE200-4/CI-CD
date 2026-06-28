@@ -1,51 +1,58 @@
-version: "3.8"
 
 services:
-  yolo-edge:
-    build: ./yolo-edge
-    image: ghcr.io/spectre200-4/ci-cd/yolo-edge:latest
-    command: python app.py --source http://192.168.0.104:8080/video
-    depends_on:
-      - kafka
-    environment:
-      - KAFKA_BROKER=kafka:9092
-    networks:
-      - edge-net
-
-  dashboard:
-    build: ./dashboard
-    image: ghcr.io/spectre200-4/ci-cd/dashboard:latest
-    ports:
-      - "8000:8000"
-    depends_on:
-      - kafka
-    environment:
-      - KAFKA_BROKER=kafka:9092
-    networks:
-      - edge-net
-
   kafka:
     image: apache/kafka:3.7.0
+    container_name: ci-cd-kafka-1
     ports:
       - "9092:9092"
     environment:
-      # Enable KRaft mode
-      - KAFKA_PROCESS_ROLES=broker,controller
-      - KAFKA_NODE_ID=1
-      - KAFKA_LISTENERS=PLAINTEXT://:9092,CONTROLLER://:9093
-      - KAFKA_ADVERTISED_LISTENERS=PLAINTEXT://kafka:9092
-      - KAFKA_CONTROLLER_LISTENER_NAMES=CONTROLLER
-      - KAFKA_CONTROLLER_QUORUM_VOTERS=1@kafka:9093
-      - KAFKA_LOG_DIRS=/var/lib/kafka/data
-      - CLUSTER_ID=ci-cd-cluster
+      # Reduce heap size to control memory footprint
+      - KAFKA_HEAP_OPTS=-Xmx512M -Xms256M
+      # Advertise the broker correctly inside the Docker network
+      - KAFKA_CFG_ADVERTISED_LISTENERS=PLAINTEXT://kafka:9092
+      - KAFKA_CFG_LISTENERS=PLAINTEXT://:9092
+      - KAFKA_CFG_AUTO_CREATE_TOPICS_ENABLE=true
+      # Space complexity tweaks: limit log retention
+      - KAFKA_CFG_LOG_RETENTION_HOURS=12
+      - KAFKA_CFG_LOG_SEGMENT_BYTES=104857600   # 100 MB segments
+      - KAFKA_CFG_LOG_RETENTION_BYTES=1073741824 # 1 GB max per topic
     volumes:
       - kafka-data:/var/lib/kafka/data
     networks:
       - edge-net
+    healthcheck:
+      test: ["CMD", "bash", "-c", "echo > /dev/tcp/localhost/9092"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
-volumes:
-  kafka-data:
+  dashboard:
+    build: ./dashboard
+    image: ghcr.io/spectre200-4/ci-cd/dashboard:latest
+    container_name: ci-cd-dashboard-1
+    depends_on:
+      kafka:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+    networks:
+      - edge-net
+
+  yolo-edge:
+    build: ./yolo-edge
+    image: ghcr.io/spectre200-4/ci-cd/yolo-edge:latest
+    container_name: ci-cd-yolo-edge-1
+    depends_on:
+      kafka:
+        condition: service_healthy
+    environment:
+      - KAFKA_BROKER=kafka:9092
+      - CAMERA_STREAM_URL=http://192.168.0.112:8080/video
+    networks:
+      - edge-net
 
 networks:
   edge-net:
-    driver: bridge
+
+volumes:
+  kafka-data:
